@@ -2,9 +2,9 @@ import logging
 import sys
 import os
 
-from telegram import ForceReply, Update # pyright: ignore[reportMissingImports]
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackContext # pyright: ignore[reportMissingImports]
-from dotenv import load_dotenv # pyright: ignore[reportMissingImports]
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackContext
+from dotenv import load_dotenv
 
 
 load_dotenv()
@@ -14,8 +14,9 @@ load_dotenv()
 bot_token = os.getenv('BOT_TOKEN_DEV')
 # TBD: store users in a DB.
 user_ids = set()
-logging.basicConfig(filename='ships.log', level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(filename='logs/ships.log', level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 
+logging.info("Bot token {bot_token} used.")
 
 # Define a few command handlers. These usually take the two arguments update and
 # context.
