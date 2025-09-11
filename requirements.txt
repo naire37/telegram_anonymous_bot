@@ -1,0 +1,7 @@
+###### Requirements without Version Specifiers ######
+telegram
+telegram-ext
+dotenv
+
+###### Requirements with Version Specifiers ######
+#   See https://www.python.org/dev/peps/pep-0440/#version-specifiers

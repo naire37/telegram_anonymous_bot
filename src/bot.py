@@ -1,12 +1,18 @@
 import logging
+import sys
+import os
 
-from telegram import ForceReply, Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackContext
+from telegram import ForceReply, Update # pyright: ignore[reportMissingImports]
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackContext # pyright: ignore[reportMissingImports]
+from dotenv import load_dotenv # pyright: ignore[reportMissingImports]
 
-# Replace with your bot token and channel ID
-BOT_TOKEN = '7704927071:AAHKCk5wR6dTwi05JMGnfvcjmHs4lk_bXBo'
-MAIN_CHANNEL_ID = '-1002875748532'  # Use the channel username or channel ID
 
+load_dotenv()
+# TBD: take the environment as a param as opposed to hardcoding it.
+#environment = sys.argv[1]
+
+bot_token = os.getenv('BOT_TOKEN_DEV')
+# TBD: store users in a DB.
 user_ids = set()
 logging.basicConfig(filename='ships.log', level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -34,13 +40,12 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 async def forward_ship(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Forward the ship to the main channel
-    await context.bot.send_message(chat_id=MAIN_CHANNEL_ID, text=update.message.text)
+    #await context.bot.send_message(chat_id=MAIN_CHANNEL_ID, text=update.message.text)
     logging.info("User {user.mention_html()}, id {user.id} sent message: {update.message.text} ")
 
     for user_id in user_ids:
         try:
-            if (user_id !=user.id):
+            if (user_id != update.message.from_user.id):
                 await context.bot.send_message(chat_id=user_id, text=update.message.text)
         except Exception as e:
             logging.debug(f"Could not send message to {user_id}: {e}")
@@ -54,7 +59,7 @@ def main() -> None:
     # Starting the harbor...
 
     # Create the Application and pass it your bot's token.
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = Application.builder().token(bot_token).build()
 
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("start", start))
