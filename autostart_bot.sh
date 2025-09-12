@@ -14,7 +14,7 @@ then
     echo "$(date): $SCRIPT_NAME not running. Restarting..."
     echo "Executing $PYTHON_EXEC $SCRIPT_PATH ..."
     mkdir -p logs
-    nohup $PYTHON_EXEC "$SCRIPT_PATH" > logs/my_script.log 2>&1 &
+    nohup $PYTHON_EXEC "$SCRIPT_PATH" --env PROD > logs/my_script.log 2>&1 &
 else
     echo "$(date): $SCRIPT_NAME is running."
 fi
