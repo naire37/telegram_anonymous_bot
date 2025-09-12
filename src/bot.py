@@ -1,14 +1,19 @@
 import logging
 import os
 import argparse
+import csv
+import os.path
 
+from pprint import pprint
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 from dotenv import load_dotenv
 
+# TBD: global vars are evil, but this is a first pass.
+users = []
+environment = "DEV"
 
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
 
 def setup_logger(name, log_file, level=logging.INFO):
     handler = logging.FileHandler(log_file)
@@ -18,19 +23,16 @@ def setup_logger(name, log_file, level=logging.INFO):
     current_logger.addHandler(handler)
     return current_logger
 
+# General logger to print errors in case environment cannot be determined.
+logger = None
+user_logger = None
 
-# General app logger
-logger = setup_logger('general', 'logs/ships.log')
-
-# Users log, until I can implement a DB
-
-# logging.basicConfig(filename='logs/ships.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-# logger = logging.getLogger("telegram_anonymous_bot")
-
-
-def get_bot_token() -> str:
+def get_environment() -> str:
     # Check, which environment the script is running for; default to DEV.
-    environment = "DEV"
+    global environment
+    global logger
+    global user_logger
+    
     available_env = ["DEV", "PROD", "OFFTOP"]
     printable_view_of_available_env = ", ".join(available_env)
 
@@ -41,89 +43,132 @@ def get_bot_token() -> str:
     if args.env is not None:
         if args.env in available_env:
             environment = args.env
-            global logger
             logger = setup_logger('general', 'logs/ships_' + args.env +'.log')
-            global user_logger
             user_logger = setup_logger('user_logger', 'logs/users_' + args.env +'.log')
         else:
+            logger = setup_logger('general', 'logs/ships.log')
             logger.error(f"Environment '{args.env}' not found in the list.")
     else:
+        logger = setup_logger('general', 'logs/ships.log')
         logger.info("Environment was not provided, defaulting to DEV.")
 
-    # Load the configuration based on environment above. Configuration is stored in .env file.
+    return environment or "DEV"
+
+def get_bot_token_for_environment(environment):
     load_dotenv()
     bot_token = os.getenv('BOT_TOKEN_' + environment)
-    # logger.info(f"Bot token {bot_token} used.")
-    return bot_token or 'DEV'
+    if (bot_token is None):
+        logger.error(f"Unable to find token for environment {environment}.")
+    return bot_token
+
+def get_users(environment):
+    global users
+    global user_logger
+    csv_filename = "data/users_" + environment + ".csv"
+    if(os.path.isfile(csv_filename)):
+        with open(csv_filename, mode='r', newline='') as csv_file:
+            reader = csv.DictReader(csv_file)
+            for row in reader:
+                row['id'] = int(row['id'])
+                users.append(row)
+    else:
+        user_logger.info(f"File {csv_filename} does not exist.")    
+    user_logger.info(f"Loaded users: {users}'.")
+    return users
 
 
-# TBD: store users in a DB.
-user_ids = set()
-
+def save_users(users):
+    global environment
+    csv_filename = "data/users_" + environment + ".csv"
+    with open(csv_filename, mode='w', newline='') as csv_file:
+        fieldnames = ['username', 'id']  # Define headers
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+    
+        writer.writeheader()  # Write the header row
+        writer.writerows(users)  # Write all the rows
 
 # /start:
 #  - add user to list of tracked users (TBD: store this in DB!)
 #  - print some kind of welcoming message
 #  - TBD: print help message (store as a constant)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    global users
+    global user_logger
+    
     user = update.effective_user
+    reply = "Это канал для анонимной ролевой игры. Пожалуйста, избегайте сообщений о реале. Канал в разработке."
     if (user is not None):
-        user_logger.info(f"User {user.mention_html()}, id {user.id} joined.")
-        user_ids.add(user.id)
+        user_ids = [u['id'] for u in users]
+        if (user.id not in user_ids):
+            users.append({'username': user.username, 'id': user.id})
+            save_users(users)
+            user_logger.info(f"User {user.username}, id {user.id} joined.")
+            reply = rf"Добро пожаловать на борт, капитан {user.mention_html()}!" + reply
+        else:
+            reply = "Похоже, вы уже подписаны. Напомнить правила? " + reply
         if (update.message is not None):
-            await update.message.reply_html(
-                rf"Добро пожаловать на борт, капитан {user.mention_html()}! Это канал для анонимной ролевой игры. Пожалуйста, избегайте сообщений о реале. Канал в разработке."
-            )
+            await update.message.reply_html(reply)
 
 # /stop:
 #  - remove user from list of tracked users (TBD: update DB!)
 #  - print some kind of farewell message
 #  - TBD: clear history so that they can't write to bot again
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    global users
+    global user_logger
+    
     user = update.effective_user
+    reply = rf"Вы отписаны от дальнейших сообщений. Чтобы снова включить обновления в этом чате, используйте команду /start."
     if (user is not None):
-        user_logger.info("User {user.mention_html()}, id {user.id} left.")
-        if (user.id in user_ids):
-            user_ids.remove(user.id)
+        users = [u for u in users if u['id'] != user.id]
+        save_users(users)
+        user_logger.info(f"User {user.username}, id {user.id} left.")
+        
         if (update.message is not None):
-            await update.message.reply_html(
-                rf"Вы отписаны от дальнейших сообщений. Чтобы снова включить обновления в этом чате, используйте команду /start."
-            )
+            await update.message.reply_html(reply)
 
 
 async def dispatch_to_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # await context.bot.send_message(chat_id=MAIN_CHANNEL_ID, text=update.message.text)
-    logger.info(
-        f"User {user.mention_html()}, id {user.id} sent message: {update.message.text} ")
-
-    for user_id in user_ids:
-        try:
-            if (user_id != update.message.from_user.id):
-                await context.bot.send_message(chat_id=user_id, text=update.message.text)
-        except Exception as e:
-            logging.debug(f"Could not send message to {user_id}: {e}")
-            print(f"Could not send message to {user_id}: {e}")
-
-# async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-#    await update.message.reply_text("Help!")
-
+    global users
+    global logger
+    
+    user = update.effective_user
+    user_ids = [u['id'] for u in users]
+    if (user is not None and update.message is not None):
+        if (user.id not in user_ids):
+            reply = "Вы не подписаны на канал. Напишите команду /start, чтобы подписаться и снова отправлять сообщения."
+            if (update.message is not None):
+                await update.message.reply_html(reply)
+        else:
+            logger.info(
+                f"User id {user.id} sent message: {update.message.text} ")
+            for user_id in user_ids:
+                try:
+                    if (user_id != user.id):
+                        await context.bot.send_message(chat_id=user_id, text=update.message.text)
+                except Exception as e:
+                    logging.debug(f"Could not send message to {user_id}: {e}")
 
 def main() -> None:
     # Starting the harbor...
-    bot_token = get_bot_token()
+    global environment
+    environment = get_environment()
+    bot_token = get_bot_token_for_environment(environment)
+    get_users(environment)
 
-    # Create the Application and pass it your bot's token.
-    application = Application.builder().token(bot_token).build()
+    if (bot_token is not None):
+        # Create the Application and pass it your bot's token.
+        application = Application.builder().token(bot_token).build()
 
-    # on different commands - answer in Telegram
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("stop", stop))
-    # application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND, dispatch_to_all))
+        # on different commands - answer in Telegram
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("stop", stop))
+        # application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND, dispatch_to_all))
 
-    # Run the bot until the user presses Ctrl-C
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # Run the bot until the user presses Ctrl-C
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == '__main__':
