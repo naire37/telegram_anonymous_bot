@@ -94,9 +94,20 @@ def save_users(users):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     global users
     global user_logger
+    global environment
     
     user = update.effective_user
-    reply = "Это канал для анонимной ролевой игры. Пожалуйста, избегайте сообщений о реале. Канал в разработке."
+    reply = 'Это дев-версия бота для разработки @AnonymousCaptainBot. Разработчик использует её для тестов. Стабильность не гарантирована.'
+    if (environment == "PROD"):
+        reply = '''
+Это бот для анонимной ролевой игры. Как он устроен? Любое ваше игровое сообщение бот перешлёт всем остальным игрокам, 
+котоыре подписаны на него. Пожалуйста, используйте бота-собрата, @AnonymousCaptainOfftopBot для любого неигрового оффтопа."
+    '''
+    if (environment == "OFFTOP"):
+        reply = '''
+Это бот для общения ролевиков, которые играют в @AnonymousCaptainBot. Как он устроен? Любое ваше сообщение бот перешлёт всем остальным игрокам, 
+которые подписаны на него. Пожалуйста, общайтесь в оффтопе здесь, и используйте бота-собрата, @AnonymousCaptainBot для игр.
+'''
     if (user is not None):
         user_ids = [u['id'] for u in users]
         if (user.id not in user_ids):
