@@ -5,4 +5,4 @@
 0 1 * * * pkill -f "bot"
 
 # Pull the latest code after kill
-0 2 * * * cd /home/ec2-user/telegram_anonymous_bot/; git pull;
+0 2 * * * cd /home/ec2-user/telegram_anonymous_bot; git pull
