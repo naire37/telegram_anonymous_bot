@@ -137,7 +137,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply = '''
 Это бот для анонимной ролевой игры. Он анонимно пересылает посты всем остальным игрокам. 
 Для общения в оффтопе: @AnonymousCaptainOfftopBot. 
-Напишите /info чтобы увидеть список команд."
+Напишите /info чтобы увидеть список команд.
     '''
     if (environment == "OFFTOP"):
         reply = '''
