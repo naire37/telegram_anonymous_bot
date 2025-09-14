@@ -21,6 +21,8 @@ dependencies = [
     "python-telegram-bot",
     "telegram",
     "dotenv",
+    "logging",
+    "argparse",
 ]
 
 [project.urls]

@@ -4,7 +4,6 @@ import argparse
 import csv
 import os.path
 
-from pprint import pprint
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 from dotenv import load_dotenv
