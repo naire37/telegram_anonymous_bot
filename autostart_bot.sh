@@ -15,6 +15,8 @@ then
     echo "Executing $PYTHON_EXEC $SCRIPT_PATH ..."
     mkdir -p logs
     mkdir -p logs/autostart
+    rm logs/autostart/prod.log
+    rm logs/autostart/offtop.log
     nohup $PYTHON_EXEC "$SCRIPT_PATH" --env PROD > logs/autostart/prod.log 2>&1 &
     nohup $PYTHON_EXEC "$SCRIPT_PATH" --env OFFTOP > logs/autostart/offtop.log 2>&1 &
 else
