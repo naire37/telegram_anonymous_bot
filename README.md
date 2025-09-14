@@ -17,10 +17,13 @@ If you're Dina and you have trouble tunning this on your Mac, make sure your Per
 
 
 To Do:
-- add a test environment
-- create an .env file with TG bot environments
-- deployment strategy
 - think about using DB
 
-Known bugs:
-- does not write the user IDs properly
+Features not yet supported:
+- редактирование сообщений 
+- удаление своих сообщений 
+- ответить на сообщение
+- ответить лично, в привате
+- таймер антиспама
+- таймер сгорания сообщений
+- опция "пожаловаться"  
