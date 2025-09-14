@@ -20,7 +20,7 @@ classifiers = [
 dependencies = [
     "python-telegram-bot",
     "telegram",
-    "dotenv",
+    "python-dotenv",
     "logging",
     "argparse",
 ]
