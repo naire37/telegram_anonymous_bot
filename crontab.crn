@@ -1,11 +1,5 @@
 # Every 5 min check if script is running and run, if it is not
 */5 * * * * cd /home/ec2-user/telegram_anonymous_bot; sh autostart_bot.sh
 
-# Kill at midnight so that it auto-restarts with latest code
-0 1 * * * pkill -f "bot"
-
-# Poetry does not pick up the dotenv somehow, argh.
-0 1 * * * python3 -m pip install python-dotenv
-
-# Pull the latest code after kill
-0 2 * * * cd /home/ec2-user/telegram_anonymous_bot; git pull; poetry install --no-root
+# Run the nightly maintenance
+0 1 * * * cd /home/ec2-user/telegram_anonymous_bot; sh nightly_maintenance.sh
