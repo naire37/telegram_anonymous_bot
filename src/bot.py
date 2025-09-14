@@ -3,10 +3,13 @@ import os
 import argparse
 import csv
 import os.path
+import time
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 from dotenv import load_dotenv
+
 
 # TBD: global vars are evil, but this is a first pass.
 users = []
@@ -57,7 +60,8 @@ def get_bot_token_for_environment(environment):
     load_dotenv()
     bot_token = os.getenv('BOT_TOKEN_' + environment)
     if (bot_token is None):
-        logger.error(f"Unable to find token for environment {environment}.")
+        if (logger is not None):
+            logger.error(f"Unable to find token for environment {environment}.")
     return bot_token
 
 def get_users(environment):
@@ -71,8 +75,10 @@ def get_users(environment):
                 row['id'] = int(row['id'])
                 users.append(row)
     else:
-        user_logger.info(f"File {csv_filename} does not exist.")    
-    user_logger.info(f"Loaded users: {users}'.")
+        if (user_logger is not None):
+            user_logger.info(f"File {csv_filename} does not exist.")    
+    if (user_logger is not None):
+        user_logger.info(f"Loaded users: {users}'.")
     return users
 
 
@@ -100,19 +106,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if (environment == "PROD"):
         reply = '''
 Это бот для анонимной ролевой игры. Как он устроен? Любое ваше игровое сообщение бот перешлёт всем остальным игрокам, 
-котоыре подписаны на него. Пожалуйста, используйте бота-собрата, @AnonymousCaptainOfftopBot для любого неигрового оффтопа."
+котоыре подписаны на него. Пожалуйста, используйте бота-собрата, @AnonymousCaptainOfftopBot для любого неигрового оффтопа. 
+Напишите /info чтобы увидеть список команд."
     '''
     if (environment == "OFFTOP"):
         reply = '''
 Это бот для общения ролевиков, которые играют в @AnonymousCaptainBot. Как он устроен? Любое ваше сообщение бот перешлёт всем остальным игрокам, 
-которые подписаны на него. Пожалуйста, общайтесь в оффтопе здесь, и используйте бота-собрата, @AnonymousCaptainBot для игр.
+которые подписаны на него. Пожалуйста, общайтесь в оффтопе здесь, и используйте бота-собрата, @AnonymousCaptainBot для игр. 
+Напишите /info чтобы увидеть список команд.
 '''
     if (user is not None):
         user_ids = [u['id'] for u in users]
         if (user.id not in user_ids):
             users.append({'username': user.username, 'id': user.id})
             save_users(users)
-            user_logger.info(f"User {user.username}, id {user.id} joined.")
+            if (user_logger is not None):
+                user_logger.info(f"User {user.username}, id {user.id} joined.")
             reply = rf"Добро пожаловать на борт, капитан {user.mention_html()}!" + reply
         else:
             reply = "Похоже, вы уже подписаны. Напомнить правила? " + reply
@@ -132,7 +141,8 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if (user is not None):
         users = [u for u in users if u['id'] != user.id]
         save_users(users)
-        user_logger.info(f"User {user.username}, id {user.id} left.")
+        if (user_logger is not None):
+            user_logger.info(f"User {user.username}, id {user.id} left.")
         
         if (update.message is not None):
             await update.message.reply_html(reply)
@@ -143,21 +153,24 @@ async def dispatch_to_all(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     global logger
     
     user = update.effective_user
-    user_ids = [u['id'] for u in users]
     if (user is not None and update.message is not None):
-        if (user.id not in user_ids):
-            reply = "Вы не подписаны на канал. Напишите команду /start, чтобы подписаться и снова отправлять сообщения."
-            if (update.message is not None):
-                await update.message.reply_html(reply)
-        else:
-            logger.info(
-                f"User id {user.id} sent message: {update.message.text} ")
-            for user_id in user_ids:
-                try:
-                    if (user_id != user.id):
-                        await context.bot.send_message(chat_id=user_id, text=update.message.text)
-                except Exception as e:
-                    logging.debug(f"Could not send message to {user_id}: {e}")
+        messageText = update.message.text
+        user_ids = [u['id'] for u in users]
+        if (messageText is not None):
+            if (user.id not in user_ids):
+                reply = "Вы не подписаны на канал. Напишите команду /start, чтобы подписаться и снова отправлять сообщения."
+                if (update.message is not None):
+                    await update.message.reply_html(reply)
+            else:
+                if (logger is not None):
+                    logger.info(
+                        f"User id {user.id} sent message: {messageText} ")
+                for user_id in user_ids:
+                    try:
+                        if (user_id != user.id):
+                            await context.bot.send_message(chat_id=user_id, text=messageText)
+                    except Exception as e:
+                        logging.debug(f"Could not send message to {user_id}: {e}")
 
 def main() -> None:
     # Starting the harbor...
