@@ -11,41 +11,15 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 from dotenv import load_dotenv
 
 
-# TBD: global vars are evil, but this is a first pass.
-users = [] # stored in format "username, id"
+# Global variables. Global variables are evil, but this is a first pass.
+
 environment = "DEV"
-
-# This is ugly but this message ids must be tracked accross bot for edit, delete and expire functionality
-messages = {}
-# Format of this dictionary is:
-# messages = {
-#    7: { # id of the user Steve
-#        8: # id of first message Steve sent 
-#            {
-#                "chat_ids_to_message_ids": [
-#                    {13:15}, # id of a chat with Tara, and message id in chat with Tara
-#                    {16:23},  # id of a chat with Mira, and message id in chat with Mira
-#                    {18:8}  # id of chat with Steve, and message id in chat with Steve
-#                ],
-#                "created": "datetime_up_to_seconds"
-#            },
-#        9: # id of second message Steve sent
-#            {
-#                "chat_ids_to_message_ids": [
-#                    {13:29}, # id of a chat with Tara, and message id in chat with Tara
-#                    {16:39}, # id of a chat with Mira, and message id in chat with Mira
-#                    {18:9}  # id of chat with Steve, and message id in chat with Steve
-#                ],
-#            },
-#                "created": "datetime_up_to_seconds"
-#    },
-#}
-# For deleting a message bot must delete all isntances of that message accross all chats. 
-#     dispatcher.add_handler(MessageHandler(Filters.update.edited_message, edited_message_handler))
-# For editing a message bot must edit all isntances of that message accross all chats. 
-#     (use context.bot.edit_message_text(chat_id, message_id, text)
-
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+logger = None
+user_logger = None 
+users = [] # stored as array of dictionaries in format {username: "lee", id: "123"}
+# This is ugly but this message ids must be tracked accross bot for edit, delete and expire functionality
+messages = [] # stored as array of dictionaries in format {sender_id, sender_message_id, recepient_id, recepient_message_id, timestamp}
 
 def setup_logger(name, log_file, level=logging.INFO):
     handler = logging.FileHandler(log_file)
@@ -54,10 +28,6 @@ def setup_logger(name, log_file, level=logging.INFO):
     current_logger.setLevel(level)
     current_logger.addHandler(handler)
     return current_logger
-
-# General logger to print errors in case environment cannot be determined.
-logger = None
-user_logger = None
 
 def get_environment() -> str:
     # Check, which environment the script is running for; default to DEV.
@@ -110,7 +80,6 @@ def get_users(environment):
     if (user_logger is not None):
         user_logger.info(f"Loaded users: {users}'.")
     return users
-
 
 def save_users(users):
     global environment
@@ -193,13 +162,16 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 /stop - отписаться
 
 Пока не работают:
-- редактирование сообщений 
 - удаление своих сообщений 
 - ответить на сообщение
 - ответить лично, в привате
 - таймер антиспама
 - таймер сгорания сообщений
-- опция "пожаловаться"   
+- опция "пожаловаться"
+- вставка медиа-контента
+
+Работает:
+- редактирование своих сообщений (будьте бдительны: в боте не будет отметки о том, что сообщение было отредактированно)
 '''
     if (update.message is not None):
         await update.message.reply_html(reply)
@@ -211,14 +183,16 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if (update.message is not None):
         await update.message.reply_html(reply)
 
-
-async def dispatch_to_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# handles new messages and edits.
+async def new_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     global users
     global logger
     
     user = update.effective_user
     if (user is not None and update.message is not None):
         messageText = update.message.text
+        originalMessageId = update.message.id
+        messageTimestamp = update.message.date
         user_ids = [u['id'] for u in users]
         if (messageText is not None):
             if (user.id not in user_ids):
@@ -226,15 +200,75 @@ async def dispatch_to_all(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 if (update.message is not None):
                     await update.message.reply_html(reply)
             else:
-                if (logger is not None):
-                    logger.info(
-                        f"User id {user.id} sent message: {messageText} ")
+                track_message(user.id, originalMessageId, None, None, messageTimestamp)
                 for user_id in user_ids:
                     try:
                         if (user_id != user.id):
-                            await context.bot.send_message(chat_id=user_id, text=messageText)
+                            forwarded_message = await context.bot.send_message(chat_id=user_id, text=messageText)
+                            track_message(user.id, originalMessageId, user_id, forwarded_message.id, messageTimestamp)
                     except Exception as e:
-                        logging.debug(f"Could not send message to {user_id}: {e}")
+                        if (logger is not None):
+                            logger.info(f"Could not send message to {user_id}: {e}")
+    if (update.edited_message is not None):
+        await handle_update(context, update.edited_message)
+
+
+# Helper function to track all messages.
+def track_message(sender_id, sender_message_id, recepient_id, recepient_message_id, timestamp):
+    global logger
+    global messages
+    if (logger is not None):
+        logger.info(
+           f"Sender {sender_id} sent message {sender_message_id}, forwarded to recepient {recepient_id} as message {recepient_message_id} at {timestamp}.")
+        messages.append({'s_id': sender_id, 's_mes_id': sender_message_id, 'r_id':recepient_id, 'r_mes_id': recepient_message_id, 'created': timestamp})
+    return
+
+
+# Helper function to find receiver message id by sender, original message id and receiver. Returns none if corresponding id is not found.
+def get_recepient_message_id(sender_id, sender_message_id, recepient_id):
+    global messages
+
+    for message in messages:
+        if sender_id == message['s_id'] and sender_message_id == message['s_mes_id'] and recepient_id == message['r_id']:
+            return message['r_mes_id']
+    return None  # if corresponding message id is not found
+
+    
+async def handle_update(context, message):
+    global users
+    global logger
+    global messages
+
+    new_message = message.text
+    sender_id = message.from_user.id
+    original_message_id = message.message_id
+
+    if (logger is not None):
+        logger.info(f"Sender id {sender_id}, original message id {original_message_id}, new text is {new_message}")
+
+    
+    user_ids = [u['id'] for u in users]
+    if (sender_id not in user_ids):
+        reply="Вы не подписаны на канал. Напишите команду /start, чтобы подписаться и снова отправлять сообщения."
+        if (message is not None):
+            await message.reply_html(reply)
+
+    else:
+        for recepient_id in user_ids:
+            try:
+                if (recepient_id != sender_id):
+                    # Find the respective message to edit and edit it.
+                    message_id_for_recepient = get_recepient_message_id(sender_id, original_message_id, recepient_id)
+                    if (message_id_for_recepient is not None):
+                        await context.bot.edit_message_text(chat_id=recepient_id, message_id=message_id_for_recepient, text=new_message)
+            except Exception as e:
+                if (logger is not None):
+                    logger.info(f"Could not edit a message: {e}")
+
+
+# For deleting a message bot must delete all isntances of that message accross all chats. 
+#     dispatcher.add_handler(MessageHandler(Filters.update.edited_message, edited_message_handler))
+
 
 def main() -> None:
     # Starting the harbor...
@@ -253,9 +287,11 @@ def main() -> None:
         application.add_handler(CommandHandler("info", info))
         application.add_handler(CommandHandler("help", info))
         application.add_handler(CommandHandler("stats", stats))
-
+        #application.add_handler(MessageHandler(
+        #    filters., edit_message))       
         application.add_handler(MessageHandler(
-            filters.TEXT & ~filters.COMMAND, dispatch_to_all))
+            filters.TEXT & ~filters.COMMAND, new_message))       
+
 
         # Run the bot until the user presses Ctrl-C
         application.run_polling(allowed_updates=Update.ALL_TYPES)
