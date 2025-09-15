@@ -11,7 +11,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 from dotenv import load_dotenv
 
 
-# Global variables. Global variables are evil, but this is a first pass.
+# Global variables. Global variables are evil, but quite effecient.
 
 environment = "DEV"
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
@@ -80,6 +80,18 @@ def get_users(environment):
     if (user_logger is not None):
         user_logger.info(f"Loaded users: {users}'.")
     return users
+
+def get_last_deleted_message_id(environment):
+    global logger
+
+    deleted_message_file = "data/last_deleted_message_" + environment + ".txt"
+    if(os.path.isfile(deleted_message_file)):
+        with open(deleted_message_file, 'r') as f:
+            number_str = f.read()
+            number = int(number_str)
+            return number
+    else:
+        return 1
 
 def save_users(users):
     global environment
@@ -158,20 +170,27 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     reply = reply + rf''' Доступные команды:
 /info или /help - показать это сообщение
 /start — подписаться
-/stats - информация о канале
 /stop - отписаться
+/stats - информация о канале
+
+Работает:
+- редактирование своих сообщений (будьте бдительны: в боте не будет отметки о том, что сообщение было отредактированно)
+
+Удаление сообщений:
+/delete - отвечая на своё сообщение этой командой, вы можете удалить это сообщение у всех. Внимание! Если вы просто удалите сообщение у себя, оно останется у всех остальных пользователей.
 
 Пока не работают:
-- удаление своих сообщений 
 - ответить на сообщение
-- ответить лично, в привате
+- личные сообщения
 - таймер антиспама
 - таймер сгорания сообщений
 - опция "пожаловаться"
 - вставка медиа-контента
 
-Работает:
-- редактирование своих сообщений (будьте бдительны: в боте не будет отметки о том, что сообщение было отредактированно)
+А что будет, если:
+- удалить чужое сообщение: оно удалится только у вас.
+- удалить своё сообщениеL оно удалится только у вас.
+
 '''
     if (update.message is not None):
         await update.message.reply_html(reply)
@@ -184,7 +203,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_html(reply)
 
 # handles new messages and edits.
-async def new_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def add_or_edit_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     global users
     global logger
     
@@ -211,6 +230,32 @@ async def new_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                             logger.info(f"Could not send message to {user_id}: {e}")
     if (update.edited_message is not None):
         await handle_update(context, update.edited_message)
+
+async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    global messages
+    global logger
+    
+    message = update.message
+    if (message is not None):
+        message_to_delete = message.reply_to_message
+        if (message_to_delete is not None and message.from_user is not None and message_to_delete.from_user is not None):
+            if (message.from_user.id != message_to_delete.from_user.id):
+                await message.reply_html("Вы пытаетесь удалить чужое сообщение. Вы можете удалить его локально у себя, используя функционал Телеграм.")
+            else:
+                # iterate over copy of messages because deleting will mess up with iterator otherwise.
+                for m in messages[:]:
+                    if message.from_user.id  == m['s_id'] and message_to_delete.message_id == m['s_mes_id']:
+                        recepient_id = m['r_id']
+                        recepient_message_id = m['r_mes_id']
+                        if (recepient_id is not None and recepient_message_id is not None):
+                            await context.bot.delete_message(chat_id=recepient_id, message_id=recepient_message_id)
+                        #Else this message is a copy user sent to themselves
+                        else:
+                            await context.bot.delete_message(chat_id=message.from_user.id, message_id=message_to_delete.id)
+                        messages.remove(m)
+        # Finally, delete the "/delete" message itself.
+        if (message.from_user is not None):
+            await context.bot.delete_message(chat_id=message.from_user.id, message_id=message.id)
 
 
 # Helper function to track all messages.
@@ -286,11 +331,10 @@ def main() -> None:
         application.add_handler(CommandHandler("stop", stop))
         application.add_handler(CommandHandler("info", info))
         application.add_handler(CommandHandler("help", info))
-        application.add_handler(CommandHandler("stats", stats))
-        #application.add_handler(MessageHandler(
-        #    filters., edit_message))       
+        application.add_handler(CommandHandler("stats", stats))     
+        application.add_handler(CommandHandler("delete", delete))     
         application.add_handler(MessageHandler(
-            filters.TEXT & ~filters.COMMAND, new_message))       
+            filters.TEXT & ~filters.COMMAND, add_or_edit_message))       
 
 
         # Run the bot until the user presses Ctrl-C
